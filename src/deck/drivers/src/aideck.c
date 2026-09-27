@@ -79,7 +79,10 @@ static bool isInit = false;
 #define CPX_ENABLE_CRTP_BRIDGE    0x10
 
 #define GAP8_MAX_MEM_WRITE_TIMEOUT_MS 5000
-#define GAP8_MAX_MEM_VERIFY_TIMEOUT_MS 5000
+// The GAP8 bootloader hashes the region it wrote at about 270 kB/s (measured: 1 MB
+// in 3.7 s, 6.6 MB in 24 s), so a fixed 5 s wait failed every image over ~1.3 MB.
+// Allow 5 us per byte on top, about 35% margin.
+#define GAP8_MAX_MEM_VERIFY_TIMEOUT_MS(size) (5000 + (size) / 200)
 
 typedef struct {
   uint8_t cmd;
@@ -155,14 +158,13 @@ static void sendFlashMd5Request(const uint32_t fwSize) {
   ASSERT(writeOk);
 }
 
-static void waitForCpxResponse() {
+static bool waitForCpxResponse(const uint32_t timeoutMs) {
   EventBits_t bits = xEventGroupWaitBits(bootloaderSync,
                       CPX_WAIT_FOR_BOOTLOADER_REPLY,
                       pdTRUE,  // Clear bits before returning
                       pdFALSE, // Wait for any bit
-                      M2T(GAP8_MAX_MEM_VERIFY_TIMEOUT_MS));
-  bool flashWritten = (bits & CPX_WAIT_FOR_BOOTLOADER_REPLY);
-  ASSERT(flashWritten);
+                      M2T(timeoutMs));
+  return (bits & CPX_WAIT_FOR_BOOTLOADER_REPLY) != 0;
 }
 
 static bool gap8DeckFlasherWrite(const uint32_t memAddr, const uint8_t writeLen, const uint8_t *buffer, const DeckMemDef_t* memDef) {
@@ -201,15 +203,21 @@ static bool gap8DeckFlasherWrite(const uint32_t memAddr, const uint8_t writeLen,
     // soon as the transfer finishes, which clears RAM.
     memset(gap8Md5, 0, sizeof(gap8Md5));
     gap8Md5ReplyLen = 0;
+    // No reply is reported rather than asserted: rebooting the flight controller
+    // does not help, and the host treats a missing digest as unverified.
     sendFlashMd5Request(fwSize);
-    waitForCpxResponse();
-    DEBUG_PRINT("GAP8 md5: %02x%02x%02x%02x%02x%02x%02x%02x"
-                "%02x%02x%02x%02x%02x%02x%02x%02x len=%u\n",
-                gap8Md5[0], gap8Md5[1], gap8Md5[2], gap8Md5[3],
-                gap8Md5[4], gap8Md5[5], gap8Md5[6], gap8Md5[7],
-                gap8Md5[8], gap8Md5[9], gap8Md5[10], gap8Md5[11],
-                gap8Md5[12], gap8Md5[13], gap8Md5[14], gap8Md5[15],
-                (unsigned)gap8Md5ReplyLen);
+    const uint32_t timeoutMs = GAP8_MAX_MEM_VERIFY_TIMEOUT_MS(fwSize);
+    if (waitForCpxResponse(timeoutMs)) {
+      DEBUG_PRINT("GAP8 md5: %02x%02x%02x%02x%02x%02x%02x%02x"
+                  "%02x%02x%02x%02x%02x%02x%02x%02x len=%u\n",
+                  gap8Md5[0], gap8Md5[1], gap8Md5[2], gap8Md5[3],
+                  gap8Md5[4], gap8Md5[5], gap8Md5[6], gap8Md5[7],
+                  gap8Md5[8], gap8Md5[9], gap8Md5[10], gap8Md5[11],
+                  gap8Md5[12], gap8Md5[13], gap8Md5[14], gap8Md5[15],
+                  (unsigned)gap8Md5ReplyLen);
+    } else {
+      DEBUG_PRINT("GAP8 md5: no reply within %lu ms\n", (unsigned long)timeoutMs);
+    }
   }
 
   return true;
