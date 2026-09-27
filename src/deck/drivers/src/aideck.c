@@ -108,7 +108,16 @@ typedef enum {
 EspMode_t espMode = ESP_MODE_NORMAL;
 const uint32_t espUartReadMaxWait = M2T(100);
 
+// The GAP8 bootloader answers GAP8_BL_CMD_MD5 with the command byte followed by
+// the 16-byte MD5 of the region it wrote. Keeping it lets the host verify a flash.
+static uint8_t gap8Md5[16];
+static uint16_t gap8Md5ReplyLen;
+
 void cpxBootloaderMessage(const CPXPacket_t * packet) {
+  gap8Md5ReplyLen = packet->dataLength;
+  if (packet->dataLength >= 1u + sizeof(gap8Md5)) {
+    memcpy(gap8Md5, &packet->data[1], sizeof(gap8Md5));
+  }
   xEventGroupSetBits(bootloaderSync, CPX_WAIT_FOR_BOOTLOADER_REPLY);
 }
 
@@ -186,11 +195,21 @@ static bool gap8DeckFlasherWrite(const uint32_t memAddr, const uint8_t writeLen,
     }
     ASSERT(buf2bufBytesAdded(&gap8BufContext) == buf2bufBytesConsumed(&gap8BufContext));
 
-    // Request the MD5 checksum of the flashed data. This is only done
-    // for synchronizing and making sure everything has been written,
-    // we do not care about the results.
+    // Request the MD5 checksum of the flashed data. This synchronizes with the
+    // end of the write, and the digest is printed so the host can compare it
+    // with md5(image). It must go to the console: the host resets this MCU as
+    // soon as the transfer finishes, which clears RAM.
+    memset(gap8Md5, 0, sizeof(gap8Md5));
+    gap8Md5ReplyLen = 0;
     sendFlashMd5Request(fwSize);
     waitForCpxResponse();
+    DEBUG_PRINT("GAP8 md5: %02x%02x%02x%02x%02x%02x%02x%02x"
+                "%02x%02x%02x%02x%02x%02x%02x%02x len=%u\n",
+                gap8Md5[0], gap8Md5[1], gap8Md5[2], gap8Md5[3],
+                gap8Md5[4], gap8Md5[5], gap8Md5[6], gap8Md5[7],
+                gap8Md5[8], gap8Md5[9], gap8Md5[10], gap8Md5[11],
+                gap8Md5[12], gap8Md5[13], gap8Md5[14], gap8Md5[15],
+                (unsigned)gap8Md5ReplyLen);
   }
 
   return true;
