@@ -70,7 +70,7 @@ static struct {
 static xQueueHandle  txQueue;
 
 #define CRTP_NBR_OF_PORTS 16
-#define CRTP_TX_QUEUE_SIZE 200
+#define CRTP_TX_QUEUE_SIZE CONFIG_CRTP_TX_QUEUE_SIZE
 #define CRTP_RX_QUEUE_SIZE 16
 
 static void crtpTxTask(void *param);
@@ -88,7 +88,11 @@ void crtpInit(void)
   if(isInit)
     return;
 
-  txQueue = xQueueCreate(CRTP_TX_QUEUE_SIZE, sizeof(CRTPPacket));
+  // Static, in regular RAM rather than the FreeRTOS heap, so a larger
+  // CONFIG_CRTP_TX_QUEUE_SIZE shows up in the build's RAM report.
+  static uint8_t txQueueStorage[CRTP_TX_QUEUE_SIZE * sizeof(CRTPPacket)];
+  static StaticQueue_t txQueueBuffer;
+  txQueue = xQueueCreateStatic(CRTP_TX_QUEUE_SIZE, sizeof(CRTPPacket), txQueueStorage, &txQueueBuffer);
   DEBUG_QUEUE_MONITOR_REGISTER(txQueue);
 
   STATIC_MEM_TASK_CREATE(crtpTxTask, crtpTxTask, CRTP_TX_TASK_NAME, NULL, CRTP_TX_TASK_PRI);

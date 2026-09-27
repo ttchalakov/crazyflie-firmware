@@ -88,8 +88,8 @@ typedef enum {
 #define LOG_MAX_LEN 26
 
 /* Log packet parameters storage */
-#define LOG_MAX_OPS 128
-#define LOG_MAX_BLOCKS 16
+#define LOG_MAX_OPS CONFIG_LOG_MAX_OPS
+#define LOG_MAX_BLOCKS CONFIG_LOG_MAX_BLOCKS
 struct log_ops {
   struct log_ops * next;
   uint8_t storageType : 4;

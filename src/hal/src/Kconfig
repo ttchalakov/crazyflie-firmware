@@ -60,4 +60,14 @@ config RADIO_ASSERT_ON_COM_PROBLEM
       this might not always be wanted and it might be better to
       sactifice communcation.
 
+config CRTP_TX_QUEUE_SIZE
+  int "CRTP transmit queue length (packets)"
+  range 1 1000
+  default 200
+  help
+      Number of outgoing CRTP packets (log data, console, replies) that can wait
+      for the link. A longer queue absorbs longer bursts before log packets are
+      dropped; it does not raise the sustained downlink rate. Each packet takes
+      32 bytes of the FreeRTOS heap.
+
 endmenu

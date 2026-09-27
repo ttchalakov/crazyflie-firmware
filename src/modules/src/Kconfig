@@ -325,3 +325,21 @@ config DEFRAG_STORAGE_ON_STARTUP
         fragmentation level.
 
 endmenu
+
+menu "Log subsystem"
+
+config LOG_MAX_BLOCKS
+    int "Maximum number of log blocks"
+    range 1 255
+    default 16
+    help
+        How many log blocks the clients can have at the same time.
+
+config LOG_MAX_OPS
+    int "Maximum number of logged variables"
+    range 1 255
+    default 128
+    help
+        How many variables all log blocks together can hold.
+
+endmenu
