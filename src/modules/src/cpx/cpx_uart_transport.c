@@ -218,10 +218,12 @@ static void CPX_UART_TX(void *param)
       xQueueReceive(uartTxQueue, &cpxTxp, 0);
       uartTxp.start = 0xFF;
       assemblePacket(&cpxTxp, &uartTxp);
+      // Also wake on DEINIT: the RX task stops at shutdown, so a CTS may never
+      // arrive, and cpxUARTTransportDeinit() waits for this task to exit.
       do
       {
         evBits = xEventGroupWaitBits(evGroup,
-                                     ESP_CTR_EVENT | ESP_CTS_EVENT,
+                                     ESP_CTR_EVENT | ESP_CTS_EVENT | DEINIT_EVENT,
                                      pdTRUE,  // Clear bits before returning
                                      pdFALSE, // Wait for any bit
                                      portMAX_DELAY);
@@ -229,7 +231,11 @@ static void CPX_UART_TX(void *param)
         {
           uart2SendData(sizeof(ctr), (uint8_t *)&ctr);
         }
-      } while ((evBits & ESP_CTS_EVENT) != ESP_CTS_EVENT);
+      } while ((evBits & ESP_CTS_EVENT) != ESP_CTS_EVENT && shutdownTransport == false);
+      if (shutdownTransport)
+      {
+        break;
+      }
       uart2SendData((uint32_t) uartTxp.payloadLength + UART_META_LENGTH, (uint8_t *)&uartTxp);
     }
   }
@@ -238,16 +244,26 @@ static void CPX_UART_TX(void *param)
   vTaskDelete(NULL);
 }
 
+// Shutdown happens when the ESP32 is reset into its bootloader for a radio flash,
+// while the external router and apps keep running. Asserting on it rebooted the
+// Crazyflie mid-command whenever the deck was talking, so ESP32 flashing failed
+// unless the GAP8 app was quiet. The Crazyflie is reset after the ESP32 flash,
+// so packets sent from here on are dropped.
 void cpxUARTTransportSend(const CPXRoutablePacket_t* packet) {
-  ASSERT(isInit == true && shutdownTransport == false);
+  ASSERT(isInit == true);
   ASSERT(packet);
 
+  if (shutdownTransport) {
+    return;
+  }
   xQueueSend(uartTxQueue, packet, portMAX_DELAY);
   xEventGroupSetBits(evGroup, ESP_TXQ_EVENT);
 }
 
+// Keeps draining during shutdown, so the RX task never blocks on a full queue
+// before it exits; once it has, this blocks for good, which is harmless.
 void cpxUARTTransportReceive(CPXRoutablePacket_t* packet) {
-  ASSERT(isInit == true && shutdownTransport == false);
+  ASSERT(isInit == true);
   ASSERT(packet);
 
   static uart_transport_packet_t cpxRxp;
