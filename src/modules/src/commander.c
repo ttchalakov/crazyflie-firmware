@@ -45,7 +45,7 @@ const static setpoint_t nullSetpoint;
 static state_t lastState;
 const static int priorityDisable = COMMANDER_PRIORITY_DISABLE;
 
-static uint32_t lastUpdate;
+static volatile uint32_t lastUpdate;
 static bool enableHighLevel = false;
 
 static QueueHandle_t setpointQueue;
@@ -115,7 +115,11 @@ bool commanderTest(void)
 
 uint32_t commanderGetInactivityTime(void)
 {
-  return xTaskGetTickCount() - lastUpdate;
+  // Read lastUpdate before the current tick: in the other order a setpoint
+  // stamped in between makes the difference wrap to ~2^32, which the power
+  // manager reads as inactivity and shuts the system down.
+  const uint32_t last = lastUpdate;
+  return xTaskGetTickCount() - last;
 }
 
 int commanderGetActivePriority(void)

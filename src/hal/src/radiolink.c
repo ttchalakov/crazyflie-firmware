@@ -66,14 +66,19 @@ static int radiolinkReceiveCRTPPacket(CRTPPacket *p);
 //Local RSSI variable used to enable logging of RSSI values from Radio
 static uint8_t rssi;
 static bool isConnected;
-static uint32_t lastPacketTick;
+static volatile uint32_t lastPacketTick;
 static uint16_t count_rx_broadcast;
 static uint16_t count_rx_unicast;
 
 static volatile P2PCallback p2p_callback;
 
 static bool radiolinkIsConnected(void) {
-  return (xTaskGetTickCount() - lastPacketTick) < M2T(RADIO_ACTIVITY_TIMEOUT_MS);
+  // Read the last packet's tick before the current tick. The other order lets
+  // the syslink task stamp a packet in between, so now - last wraps to ~2^32
+  // and a healthy link reads as lost (and logRunBlock() then deletes every log
+  // block).
+  const uint32_t last = lastPacketTick;
+  return (xTaskGetTickCount() - last) < M2T(RADIO_ACTIVITY_TIMEOUT_MS);
 }
 
 static struct crtpLinkOperations radiolinkOp =
