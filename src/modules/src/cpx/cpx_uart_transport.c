@@ -157,13 +157,20 @@ static void CPX_UART_RX(void *param)
       }
       else
       {
-        uart2GetData(uartRxp.payloadLength, (uint8_t*) &uartRxp.payload);
+        // A corrupt frame is dropped, not asserted on: noise on the line, for
+        // example while the deck boots, can read as a frame, and an assert would
+        // reboot the Crazyflie. A length above the MTU is skipped by resyncing on
+        // the next start byte, so it cannot overrun uartRxp. The ESP32 gets its
+        // clear-to-receive either way, so the link keeps flowing.
+        if (uartRxp.payloadLength <= CPX_UART_TRANSPORT_MTU) {
+          uart2GetData(uartRxp.payloadLength, (uint8_t*) &uartRxp.payload);
 
-        uint8_t crc;
-        uart2GetData(1, &crc);
-        ASSERT(crc == calcCrc(&uartRxp));
-        if (cpxCheckVersion(uartRxp.routablePayload.route.version)) {
-          xQueueSend(uartRxQueue, &uartRxp, portMAX_DELAY);
+          uint8_t crc;
+          uart2GetData(1, &crc);
+          if (uartRxp.payloadLength >= CPX_ROUTING_PACKED_SIZE && crc == calcCrc(&uartRxp) &&
+              cpxCheckVersion(uartRxp.routablePayload.route.version)) {
+            xQueueSend(uartRxQueue, &uartRxp, portMAX_DELAY);
+          }
         }
         xEventGroupSetBits(evGroup, ESP_CTR_EVENT);
       }
@@ -245,10 +252,10 @@ static void CPX_UART_TX(void *param)
 }
 
 // Shutdown happens when the ESP32 is reset into its bootloader for a radio flash,
-// while the external router and apps keep running. Asserting on it rebooted the
-// Crazyflie mid-command whenever the deck was talking, so ESP32 flashing failed
-// unless the GAP8 app was quiet. The Crazyflie is reset after the ESP32 flash,
-// so packets sent from here on are dropped.
+// while the external router and apps keep running, so sends still arrive. An
+// assert here would reboot the Crazyflie mid-flash whenever the deck is talking.
+// The Crazyflie is reset after the ESP32 flash, so packets sent from here on are
+// dropped.
 void cpxUARTTransportSend(const CPXRoutablePacket_t* packet) {
   ASSERT(isInit == true);
   ASSERT(packet);

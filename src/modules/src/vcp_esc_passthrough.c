@@ -80,11 +80,6 @@ void passthroughInit()
 void passthroughEnableFromISR()
 {
   BaseType_t xHigherPriorityTaskWoken;
-  // The USB ISR is live before passthroughInit() creates the task, and a host
-  // opening the CDC port lands here. Notifying a NULL handle asserts.
-  if (passthroughTaskHandle == NULL) {
-    return;
-  }
   vTaskNotifyGiveFromISR(passthroughTaskHandle, &xHigherPriorityTaskWoken);
 }
 

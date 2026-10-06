@@ -79,9 +79,8 @@ static bool isInit = false;
 #define CPX_ENABLE_CRTP_BRIDGE    0x10
 
 #define GAP8_MAX_MEM_WRITE_TIMEOUT_MS 5000
-// The GAP8 bootloader hashes the region it wrote at about 270 kB/s (measured: 1 MB
-// in 3.7 s, 6.6 MB in 24 s), so a fixed 5 s wait failed every image over ~1.3 MB.
-// Allow 5 us per byte on top, about 35% margin.
+// The GAP8 bootloader hashes the region it wrote at about 270 kB/s, so the wait
+// grows with the image: 5 us per byte on top of 5 s, about 35% margin.
 #define GAP8_MAX_MEM_VERIFY_TIMEOUT_MS(size) (5000 + (size) / 200)
 
 typedef struct {
@@ -198,13 +197,13 @@ static bool gap8DeckFlasherWrite(const uint32_t memAddr, const uint8_t writeLen,
     ASSERT(buf2bufBytesAdded(&gap8BufContext) == buf2bufBytesConsumed(&gap8BufContext));
 
     // Request the MD5 checksum of the flashed data. This synchronizes with the
-    // end of the write, and the digest is printed so the host can compare it
-    // with md5(image). It must go to the console: the host resets this MCU as
-    // soon as the transfer finishes, which clears RAM.
+    // end of the write, and the digest is printed so a host can compare it with
+    // md5(image). It must go to the console: the host resets this MCU as soon as
+    // the transfer finishes, which clears RAM.
     memset(gap8Md5, 0, sizeof(gap8Md5));
     gap8Md5ReplyLen = 0;
     // No reply is reported rather than asserted: rebooting the flight controller
-    // does not help, and the host treats a missing digest as unverified.
+    // does not help, and a host can treat a missing digest as unverified.
     sendFlashMd5Request(fwSize);
     const uint32_t timeoutMs = GAP8_MAX_MEM_VERIFY_TIMEOUT_MS(fwSize);
     if (waitForCpxResponse(timeoutMs)) {
